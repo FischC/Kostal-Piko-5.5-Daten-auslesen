@@ -3,22 +3,48 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 import time
-
-
-print("Datenbank verbindungsaufbau")
-#Setup database
-client = InfluxDBClient(host='192.168.1.99', port=8086, database='PvAnlage')
-
+import paho.mqtt.client as mqtt
+import os
 
 #Wechselrichter Anmeldedaten
-url = 'http://192.168.1.21/'
+url = 'http://192.168.1.21/'    #Ip des Wechselrichters im Heimnetzwerk 
 nutzername = 'pvserver'
 pw = 'Reit2196'
+
+#Datenbank Ausgabe Definieren mir Ture/False
+useDatabase = True
+measurement = "wr"
+
+#Setup database
+if useDatabase:
+    client = InfluxDBClient(host='192.168.1.99', port=8086, database='PvAnlage')
+
+#Daten Ausgabe Komandozeile Ture/False
+printValue = True
+
+#Daten über MQTT Senden Ture/False
+useMQTT = True
+#MQTT Broker IP adresse Eingeben ohne Port!
+mqttBroker = "192.168.1.99"
+mqttuser = ""
+mqttpasswort = ""
+mqttport = 1883
+mqttprefix = "Wechselrichter/Kostal/"
+
+#MQTT Init
+if useMQTT:
+    try:
+        clientmqtt = mqtt.Client("SmartMeter")
+        clientmqtt.username_pw_set(mqttuser, mqttpasswort)
+        clientmqtt.connect(mqttBroker, mqttport)
+    except:
+        print("Die Ip Adresse des Brokers ist falsch!")
+        sys.exit()
+
 
 
 while 1:
 
-    print("Datenabfrage")
     page = requests.get(url,auth=(nutzername,pw ))
     soup = BeautifulSoup(page.content, 'html.parser')
     results = soup.find_all('td')
@@ -41,8 +67,6 @@ while 1:
     L3Leistung_W       = results[120].get_text()
     Zeitpunkt          = datetime.now()
     
-    print(Aktuelleleistung_W)
-    print("Datenabfrage Erfolgreich")
 
     #Setup Payload
     try:
@@ -73,10 +97,47 @@ while 1:
         
         
         }
+
+        if printValue:
+            print("\n\t\t*** Daten vom Wechselrichter ***\n\nBezeichnung\t\t\t Wert")
+            print("Status \t\t\t\t Eingeschalten")
+            print("Aktuelleleistung \t\t") + Aktuelleleistung_W
+            print("Gesamtenergie \t\t\t 0") + Gesamtenergie_kWh
+            print("Tagesenergie \t\t\t 0") +  Tagesenergie_kWh
+            print("String1 Spannung\t\t\t 0") + String1Spannung_V
+            print("String1 Strom\t\t\t 0") + String1Strom_A
+            print("String2 Spannung\t\t\t 0") + String2Spannung_V
+            print("String2 Strom\t\t\t 0") + String2Strom_A
+            print("String3 Spannung\t\t\t 0") + String3Spannung_V
+            print("String3 Strom\t\t\t 0") + String3Strom_A
+            print("Spannung L1\t\t\t 0") + L1Spannung_V
+            print("Leistung L1\t\t\t 0") + L1Leistung_W
+            print("Spannung L2\t\t\t 0") + L2Spannung_V
+            print("Leistung L2\t\t\t 0") + L2Leistung_W
+            print("Spannung L3\t\t\t 0") + L3Spannung_V
+            print("Leistung L3\t\t\t 0") + L3Leistung_W
+            
+        if useMQTT:
+            clientmqtt.publish(mqttprefix + "Aktuelleleistung",Aktuelleleistung_W)
+            clientmqtt.publish(mqttprefix + "Gesamtenergie",Gesamtenergie_kWh)
+            clientmqtt.publish(mqttprefix + "Tagesenergie",Tagesenergie_kWh)
+            clientmqtt.publish(mqttprefix + "String1/Spannung",String1Spannung_V)
+            clientmqtt.publish(mqttprefix + "String1/Strom",String1Strom_A)
+            clientmqtt.publish(mqttprefix + "String2/Spannung",String2Spannung_V)
+            clientmqtt.publish(mqttprefix + "String2/Strom",String2Strom_A)
+            clientmqtt.publish(mqttprefix + "String3/Spannung",String3Spannung_V)
+            clientmqtt.publish(mqttprefix + "String3/Strom",String3Strom_A)
+            clientmqtt.publish(mqttprefix + "L1/Spannung",L1Spannung_V)
+            clientmqtt.publish(mqttprefix + "L1/Leistung",L1Leistung_W)
+            clientmqtt.publish(mqttprefix + "L2/Spannung",L2Spannung_V)
+            clientmqtt.publish(mqttprefix + "L2/Leistung",L2Leistung_W)
+            clientmqtt.publish(mqttprefix + "L3/Spannung",L3Spannung_V)
+            clientmqtt.publish(mqttprefix + "L3/Leistung",L3Leistung_W)
+
     except:
         json_payload = []
         daten = {
-            "measurement":"wr",
+            "measurement":measurement,
             "tags": {
                 "wr": "kostal"
                 },
@@ -101,15 +162,34 @@ while 1:
         
         
         }
-        print("Wechselrichter ausgeschalten")
-        print(datetime.now())
-        time.sleep(5)
+        if printValue:
+            print("\n\t\t*** Daten vom Wechselrichter ***\n\nBezeichnung\t\t\t Wert")
+            print("Status \t\t\t\t Ausgeschalten")
+        if useMQTT:
+            clientmqtt.publish(mqttprefix + "Aktuelleleistung",0)
+            clientmqtt.publish(mqttprefix + "Gesamtenergie",0)
+            clientmqtt.publish(mqttprefix + "Tagesenergie",0)
+            clientmqtt.publish(mqttprefix + "String1/Spannung",0)
+            clientmqtt.publish(mqttprefix + "String1/Strom",0)
+            clientmqtt.publish(mqttprefix + "String2/Spannung",0)
+            clientmqtt.publish(mqttprefix + "String2/Strom",0)
+            clientmqtt.publish(mqttprefix + "String3/Spannung",0)
+            clientmqtt.publish(mqttprefix + "String3/Strom",0)
+            clientmqtt.publish(mqttprefix + "L1/Spannung",0)
+            clientmqtt.publish(mqttprefix + "L1/Leistung",0)
+            clientmqtt.publish(mqttprefix + "L2/Spannung",0)
+            clientmqtt.publish(mqttprefix + "L2/Leistung",0)
+            clientmqtt.publish(mqttprefix + "L3/Spannung",0)
+            clientmqtt.publish(mqttprefix + "L3/Leistung",0)
+    time.sleep(5)
     json_payload.append(daten)
     
     
     
     #Senden der Daten
-    client.write_points(json_payload,database="PvAnlage")
+    if useDatabase:
+        client.write_points(json_payload)
+        #print("Daten gesendet")
     time.sleep(5)
 
 
